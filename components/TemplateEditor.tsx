@@ -56,7 +56,9 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
       setNumPages(pdf.numPages);
       renderPage(1, pdf);
     }).catch((err: any) => console.error("Error loading PDF", err));
-  }, [template]);
+    
+  // FIX: Only reload PDF if the binary data changes, not on every field update
+  }, [template?.pdfData]); 
 
   // Render Page
   const renderPage = async (pageNum: number, pdf: any) => {
