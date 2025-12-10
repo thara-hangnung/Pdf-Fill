@@ -1,0 +1,5 @@
+{
+  "name": "AutoForm PDF",
+  "description": "A PWA for creating profiles, managing PDF templates, manually defining fields on static PDFs, and generating filled documents offline.",
+  "requestFramePermissions": []
+}
