@@ -23,6 +23,9 @@ export interface TemplateField {
   y?: number;
   width?: number;
   height?: number;
+  
+  // Visual properties
+  fontSize?: number;
 }
 
 export interface Mapping {
