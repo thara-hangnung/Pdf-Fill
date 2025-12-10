@@ -3,7 +3,7 @@ import { db } from '../db';
 import { Template, TemplateField, FieldType, Profile } from '../types';
 import { generateFilledPDF } from '../services/pdfService';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, Plus, Trash2, Download, Save, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Download, Maximize2, Move } from 'lucide-react';
 
 interface Props {
   templateId: number;
@@ -28,7 +28,6 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
   
   // Interaction State
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   
   // Load Template
   useEffect(() => {
@@ -41,7 +40,6 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
   useEffect(() => {
     if (!template) return;
     
-    // Explicitly cast window to any to access the global pdfjsLib injected via script tag in index.html
     const globalWin = window as any;
     const pdfLib = globalWin.pdfjsLib;
     
@@ -57,7 +55,6 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
       renderPage(1, pdf);
     }).catch((err: any) => console.error("Error loading PDF", err));
     
-  // FIX: Only reload PDF if the binary data changes, not on every field update
   }, [template?.pdfData]); 
 
   // Render Page
@@ -65,15 +62,10 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
     if (!canvasRef.current) return;
     try {
       const page = await pdf.getPage(pageNum);
-      
-      // Calculate scale to fit container width roughly, or fixed
-      const viewport = page.getViewport({ scale: scale }); // 1.0 scale to start
-      
-      // We might need to scale to fit width of container
+      const viewport = page.getViewport({ scale: scale });
       const containerWidth = containerRef.current?.clientWidth || 800;
-      // Prevent divide by zero if containerWidth is 0 (hidden)
       const effectiveContainerWidth = containerWidth > 0 ? containerWidth : 800;
-      const desiredScale = (effectiveContainerWidth - 48) / viewport.width; // 48px padding
+      const desiredScale = (effectiveContainerWidth - 48) / viewport.width;
       const scaledViewport = page.getViewport({ scale: desiredScale });
       
       setScale(desiredScale);
@@ -112,10 +104,11 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
       type: FieldType.TEXT,
       isManual: true,
       pageIndex: currentPage - 1,
-      x: 50, // PDF points
-      y: 50, // PDF points
+      x: 50,
+      y: 50,
       width: 150,
-      height: 20
+      height: 30,
+      fontSize: 12
     };
 
     const newTemplate = {
@@ -132,6 +125,12 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
     const newFields = template.fields.map(f => f.id === id ? { ...f, ...updates } : f);
     setTemplate({ ...template, fields: newFields });
   };
+
+  const persistField = async () => {
+    if(template) {
+       await db.templates.update(template.id!, { fields: template.fields });
+    }
+  }
 
   const deleteField = (id: string) => {
     if (!template) return;
@@ -150,7 +149,6 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
     let newMappings = [...template.mappings];
 
     if (profileKey === '') {
-      // Remove mapping
       if (existingIndex > -1) newMappings.splice(existingIndex, 1);
     } else {
       if (existingIndex > -1) {
@@ -192,7 +190,7 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] bg-white rounded-xl shadow-xl overflow-hidden">
       {/* Header */}
-      <div className="h-16 border-b flex items-center justify-between px-6 bg-slate-50">
+      <div className="h-16 border-b flex items-center justify-between px-6 bg-slate-50 shrink-0">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full"><ArrowLeft size={20}/></button>
           <h2 className="font-bold text-lg truncate max-w-[200px]">{template.name}</h2>
@@ -219,7 +217,7 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
               onChange={(e) => setSelectedProfileId(Number(e.target.value))}
               value={selectedProfileId || ''}
             >
-              <option value="">Select Profile to Fill...</option>
+              <option value="">Select Profile...</option>
               {profiles?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <button 
@@ -236,7 +234,7 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
         {/* Main Content Area */}
         <div className="flex-1 bg-slate-100 overflow-auto flex justify-center p-8 relative" ref={containerRef}>
           {activeTab === 'design' ? (
-             <div className="relative shadow-lg" style={{ width: canvasRef.current?.width, height: canvasRef.current?.height }}>
+             <div className="relative shadow-lg select-none" style={{ width: canvasRef.current?.width, height: canvasRef.current?.height }}>
                 <canvas ref={canvasRef} className="bg-white" />
                 
                 {/* Overlay Layer */}
@@ -244,8 +242,8 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
                   {currentFields.map(field => (
                     <div
                       key={field.id}
-                      className={`absolute border-2 flex items-center justify-center cursor-move text-xs font-bold overflow-hidden bg-blue-500/20
-                        ${selectedFieldId === field.id ? 'border-blue-600 z-20' : 'border-blue-400 border-dashed hover:border-blue-500'}`}
+                      className={`absolute group flex items-start p-1
+                        ${selectedFieldId === field.id ? 'border-2 border-blue-600 z-20 bg-blue-500/10' : 'border border-blue-400 border-dashed hover:bg-blue-500/5'}`}
                       style={{
                         left: (field.x || 0) * scale,
                         top: (field.y || 0) * scale,
@@ -254,9 +252,12 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
                       }}
                       onMouseDown={(e) => {
                         e.stopPropagation();
+                        // Only start drag if not clicking the resize handle
+                        const target = e.target as HTMLElement;
+                        if(target.classList.contains('resize-handle')) return;
+
                         setSelectedFieldId(field.id);
                         
-                        // Simple Drag implementation
                         const startX = e.clientX;
                         const startY = e.clientY;
                         const startLeft = field.x || 0;
@@ -271,15 +272,59 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
                         const onUp = () => {
                           window.removeEventListener('mousemove', onMove);
                           window.removeEventListener('mouseup', onUp);
-                          // Persist to DB on mouse up
-                          db.templates.update(template.id!, { fields: template.fields });
+                          persistField();
                         };
 
                         window.addEventListener('mousemove', onMove);
                         window.addEventListener('mouseup', onUp);
                       }}
                     >
-                      {field.name}
+                      {/* Drag Handle Icon (Visual only) */}
+                      <div className="absolute -top-3 -left-1 opacity-0 group-hover:opacity-100 bg-blue-600 text-white p-0.5 rounded cursor-move">
+                        <Move size={10} />
+                      </div>
+
+                      {/* Text Preview */}
+                      <span 
+                        className="pointer-events-none truncate w-full" 
+                        style={{ fontSize: (field.fontSize || 12) * scale + 'px', lineHeight: 1 }}
+                      >
+                        {field.name}
+                      </span>
+
+                      {/* Resize Handle */}
+                      {selectedFieldId === field.id && (
+                        <div 
+                          className="resize-handle absolute bottom-0 right-0 w-4 h-4 bg-blue-600 cursor-nwse-resize rounded-tl-md z-30"
+                          onMouseDown={(e) => {
+                             e.stopPropagation();
+                             e.preventDefault();
+                             
+                             const startX = e.clientX;
+                             const startY = e.clientY;
+                             const startWidth = field.width || 100;
+                             const startHeight = field.height || 20;
+
+                             const onResize = (moveEvent: MouseEvent) => {
+                                const dx = (moveEvent.clientX - startX) / scale;
+                                const dy = (moveEvent.clientY - startY) / scale;
+                                updateField(field.id, { 
+                                  width: Math.max(20, startWidth + dx), 
+                                  height: Math.max(10, startHeight + dy) 
+                                });
+                             };
+
+                             const onUp = () => {
+                                window.removeEventListener('mousemove', onResize);
+                                window.removeEventListener('mouseup', onUp);
+                                persistField();
+                             };
+
+                             window.addEventListener('mousemove', onResize);
+                             window.addEventListener('mouseup', onUp);
+                          }}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -324,7 +369,7 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
 
         {/* Sidebar Controls (Design Mode) */}
         {activeTab === 'design' && (
-          <div className="w-64 bg-white border-l flex flex-col p-4 space-y-4 shadow-lg z-20">
+          <div className="w-64 bg-white border-l flex flex-col p-4 space-y-4 shadow-lg z-20 shrink-0">
              <div className="bg-slate-100 p-2 rounded flex justify-center items-center gap-4">
                 <button disabled={currentPage <= 1} onClick={() => handlePageChange(currentPage - 1)} className="p-1 hover:bg-white rounded disabled:opacity-30">◀</button>
                 <span className="text-sm font-medium">Page {currentPage} / {numPages}</span>
@@ -340,37 +385,68 @@ export const TemplateEditor: React.FC<Props> = ({ templateId, onClose }) => {
 
              {selectedFieldId ? (
                <div className="border-t pt-4 mt-2">
-                 <h4 className="font-semibold text-sm mb-2 text-slate-700">Selected Field</h4>
+                 <h4 className="font-semibold text-sm mb-3 text-slate-700">Properties</h4>
                  {(() => {
                    const f = template.fields.find(x => x.id === selectedFieldId);
                    if (!f) return null;
                    return (
                      <div className="space-y-3">
                        <div>
-                         <label className="text-xs text-slate-500">Name</label>
+                         <label className="text-xs text-slate-500 font-medium uppercase">Field Name</label>
                          <input 
-                          className="w-full border p-1 rounded text-sm" 
+                          className="w-full border p-2 rounded text-sm mt-1 focus:ring-1 focus:ring-blue-500 outline-none" 
                           value={f.name}
                           onChange={(e) => {
                             updateField(f.id, { name: e.target.value });
-                            // Auto save for name change
-                            db.templates.update(template.id!, { fields: template.fields.map(field => field.id === f.id ? { ...field, name: e.target.value } : field) });
+                            persistField();
                           }}
                          />
                        </div>
-                       <button 
-                        onClick={() => deleteField(f.id)}
-                        className="w-full py-1.5 bg-red-50 text-red-600 rounded border border-red-200 text-xs hover:bg-red-100 flex items-center justify-center gap-1"
-                       >
-                         <Trash2 size={12}/> Remove Field
-                       </button>
+
+                       <div>
+                         <label className="text-xs text-slate-500 font-medium uppercase">Font Size (pt)</label>
+                         <div className="flex items-center gap-2 mt-1">
+                            <button 
+                              className="w-8 h-8 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center font-bold text-slate-600"
+                              onClick={() => {
+                                updateField(f.id, { fontSize: Math.max(6, (f.fontSize || 12) - 1) });
+                                persistField();
+                              }}
+                            >-</button>
+                            <input 
+                              type="number"
+                              className="w-full text-center border p-1 rounded text-sm outline-none" 
+                              value={f.fontSize || 12}
+                              onChange={(e) => {
+                                updateField(f.id, { fontSize: parseInt(e.target.value) || 12 });
+                                persistField();
+                              }}
+                            />
+                             <button 
+                              className="w-8 h-8 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center font-bold text-slate-600"
+                              onClick={() => {
+                                updateField(f.id, { fontSize: Math.min(72, (f.fontSize || 12) + 1) });
+                                persistField();
+                              }}
+                            >+</button>
+                         </div>
+                       </div>
+
+                       <div className="pt-2">
+                         <button 
+                          onClick={() => deleteField(f.id)}
+                          className="w-full py-2 bg-red-50 text-red-600 rounded border border-red-200 text-xs hover:bg-red-100 flex items-center justify-center gap-1 font-medium"
+                         >
+                           <Trash2 size={14}/> Remove Field
+                         </button>
+                       </div>
                      </div>
                    )
                  })()}
                </div>
              ) : (
-                <div className="text-sm text-slate-400 text-center mt-4">
-                  Select a field on the PDF to edit properties.
+                <div className="text-sm text-slate-400 text-center mt-4 bg-slate-50 p-4 rounded-lg border border-dashed">
+                  Select a field on the PDF to edit its properties (Name, Font Size, etc).
                 </div>
              )}
           </div>
